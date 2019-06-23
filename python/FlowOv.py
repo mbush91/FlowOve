@@ -65,7 +65,7 @@ def RunProfile(profile) :
 
     for target in temps :
         temp = sensor.readTempC()
-        print 'Thermocouple Temperature: {0:0.3F}°C / {1:0.3F}°F'.format(temp, c_to_f(temp))
+        print 'Thermocouple Temperature: %s°C'%temp
 
         if temp < target :
             # Turn On Heating Elements
