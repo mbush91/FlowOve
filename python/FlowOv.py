@@ -1,3 +1,5 @@
+import Adafruit_GPIO.SPI as SPI
+import MAX6675.MAX6675 as MAX6675
 import json
 import socket
 import signal
@@ -5,12 +7,16 @@ import thread
 import time
 
 PROFILES = '../html/profiles/profiles.json'
+FREQUENCY =  1 #Hz
+SPI_PORT   = 0
+SPI_DEVICE = 0
 
-pf = open(PROFILES, 'r')
+def load_profiles() :
+    f = open(PROFILES,'r')
+    p = json.load(f)
+    f.close()
 
-profiles = json.load(pf)
-
-x = 1
+    return p
 
 def make_csv(fname, time, temp) :
     out = ""
@@ -50,9 +56,25 @@ def build_tempProfile(profile, frequency = 1) :
 
     return otime, otemp
 
+def c_to_f(c):
+        return c * 9.0 / 5.0 + 32.0
 
-def RunProfile(pName) :
-    print pName
+def RunProfile(profile) :
+    sensor = MAX6675.MAX6675(spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE))
+    times,temps = build_tempProfile(profile,FREQUENCY)
+
+    for target in temps :
+        temp = sensor.readTempC()
+        print 'Thermocouple Temperature: {0:0.3F}°C / {1:0.3F}°F'.format(temp, c_to_f(temp))
+
+        if temp < target :
+            # Turn On Heating Elements
+
+        else :
+            # Turn Off Heating Elements
+
+        time.sleep(1/FREQUENCY)
+
 
 class Server:
  """ Class describing a simple HTTP server objects."""
@@ -123,7 +145,7 @@ class Server:
 
  def _wait_for_connections(self):
 
-     global serialHandler
+     global profiles
      
      """ Main loop awaiting connections """
      while True:
@@ -167,20 +189,18 @@ class Server:
                      #t = file_requested[1].split('@')[1]
                      #set_temps(serialHandler,t)
                      response_content = "Running Profile %s"%file_requested[2]
-                     RunProfile(file_requested[2])
+                     thread.start_new_thread(RunProfile,(profiles[file_requested[2]],))
 
                  except :
-                     response_content = "Failed"
+                     response_content = "Could not load profile: %s"%file_requested[2]
                 
                  #response_content = "setTemps"            
-             
 
              response_headers = self._gen_headers( 200)
              server_response =  response_headers.encode() # return headers for GET and HEAD
 
              if (request_method == 'GET'):
                  server_response +=  response_content  # return additional conten for GET only
-
 
              conn.send(server_response)
              
@@ -192,7 +212,6 @@ class Server:
 
 
 def graceful_shutdown(sig, dummy):
-    global run_thread
     """ This function shuts down the server. It's triggered
     by SIGINT signal """
 
@@ -201,12 +220,10 @@ def graceful_shutdown(sig, dummy):
     s.shutdown() #shut down the server
     import sys
     sys.exit(1)
-
-
-
 ###########################################################
 #shut down server on ctrl+c
-    
+
+profiles = load_profiles()
 signal.signal(signal.SIGINT, graceful_shutdown)
 #thread.start_new_thread( run_logger , ("FlowOv",))
 print ("Starting web server")
