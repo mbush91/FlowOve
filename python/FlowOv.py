@@ -1,4 +1,5 @@
 import Adafruit_GPIO.SPI as SPI
+import RPi.GPIO as GPIO
 import MAX6675.MAX6675 as MAX6675
 import json
 import socket
@@ -7,9 +8,18 @@ import thread
 import time
 
 PROFILES = '../html/profiles/profiles.json'
+LOG = 'last.csv'
 FREQUENCY =  1 #Hz
 SPI_PORT   = 0
 SPI_DEVICE = 0
+RELAY_PIN = 2
+
+kill_thread = False
+running_profile = False
+
+def init() :
+    GPIO.setmode(GPIO.BCM)
+    GPIO.setup(RELAY_PIN, GPIO.OUT, initial=GPIO.HIGH)
 
 def load_profiles() :
     f = open(PROFILES,'r')
@@ -59,22 +69,56 @@ def build_tempProfile(profile, frequency = 1) :
 def c_to_f(c):
         return c * 9.0 / 5.0 + 32.0
 
+def write_log(log) :
+    log_file = open(LOG,'a+')
+    s = ""
+    for l in log :
+        s += "%s,%s\n"%l
+
+    log_file.write(s)
+    log_file.close()
+
 def RunProfile(profile) :
+    global kill_thread
+    global running_profile
+
+    running_profile = True
+
     sensor = MAX6675.MAX6675(spi=SPI.SpiDev(SPI_PORT, SPI_DEVICE))
     times,temps = build_tempProfile(profile,FREQUENCY)
 
-    for target in temps :
-        temp = sensor.readTempC()
-        print 'Thermocouple Temperature: %s°C'%temp
+    log_file = open(LOG,'w+')
+    log_file.close()
+    log_cnt = 0
+    log = []
+    ltime = 0
 
+    for target in temps :
+        if kill_thread :
+            break
+        temp = sensor.readTempC()
+
+        log.append((ltime,temp))
+        log_cnt += 1
+
+        print "Temperature: %s\nTarget: %s"%(temp,target)
+        print(str(temp))
         if temp < target :
             # Turn On Heating Elements
-
+            GPIO.output(RELAY_PIN, GPIO.LOW)
         else :
             # Turn Off Heating Elements
+            GPIO.output(RELAY_PIN, GPIO.HIGH)
 
         time.sleep(1/FREQUENCY)
+        ltime += (1/FREQUENCY)
 
+        if log_cnt > 10 :
+            log_cnt = 0
+            write_log(log)
+            
+    write_log(log)
+    running_profile = False
 
 class Server:
  """ Class describing a simple HTTP server objects."""
@@ -185,12 +229,11 @@ class Server:
                 response_content = "FlowOv - No Command"
              elif ('Run' in file_requested[1]):
                  try :
-
-                     #t = file_requested[1].split('@')[1]
-                     #set_temps(serialHandler,t)
-                     response_content = "Running Profile %s"%file_requested[2]
-                     thread.start_new_thread(RunProfile,(profiles[file_requested[2]],))
-
+                     if not running_profile :
+                         response_content = "Running Profile %s"%file_requested[2]
+                         thread.start_new_thread(RunProfile,(profiles[file_requested[2]],))
+                     else :
+                         response_content = "A Profile is already active"
                  except :
                      response_content = "Could not load profile: %s"%file_requested[2]
                 
@@ -212,10 +255,12 @@ class Server:
 
 
 def graceful_shutdown(sig, dummy):
+    global kill_thread
     """ This function shuts down the server. It's triggered
     by SIGINT signal """
 
-    run_thread = False
+    kill_thread = True
+    GPIO.output(RELAY_PIN, GPIO.HIGH)
     
     s.shutdown() #shut down the server
     import sys
@@ -223,6 +268,7 @@ def graceful_shutdown(sig, dummy):
 ###########################################################
 #shut down server on ctrl+c
 
+init()
 profiles = load_profiles()
 signal.signal(signal.SIGINT, graceful_shutdown)
 #thread.start_new_thread( run_logger , ("FlowOv",))
