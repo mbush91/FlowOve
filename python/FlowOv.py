@@ -1,6 +1,7 @@
 import Adafruit_GPIO.SPI as SPI
 import RPi.GPIO as GPIO
 import MAX6675.MAX6675 as MAX6675
+import argparse
 import json
 import socket
 import signal
@@ -48,14 +49,21 @@ def build_tempProfile(profile, frequency = 1) :
     otime = []
     otemp = []
 
+    print tempC
+    print times
+
     while idx < (num_points-1) :
-        y1 = tempC[idx]
-        y2 = tempC[idx + 1]
-        x1 = times[idx]
-        x2 = times[idx + 1]
+        y1 = float(tempC[idx])
+        y2 = float(tempC[idx + 1])
+        x1 = float(times[idx])
+        x2 = float(times[idx + 1])
 
         m = (y2 - y1) / (x2 - x1)
         b = y1 - m * x1
+
+
+        print "y1: %s\ny2: %s\nx1: %s\nx2: %s"%(y1,y2,x1,x2)
+        print "m: %s\nb: %s"%(m,b)
 
         t = x1 
         while t < x2 :
@@ -268,10 +276,40 @@ def graceful_shutdown(sig, dummy):
 ###########################################################
 #shut down server on ctrl+c
 
+
+def load_args(argv=None) :
+    parser = argparse.ArgumentParser(description='')
+
+    parser.add_argument(
+            "-p", "--profile",
+            action="store",
+            dest="profile",
+            required=False,
+            help=("Profile to Run"),
+        )
+    parser.add_argument(
+            "-d", "--dry_run",
+            action="store_true",
+            dest="dry_run",
+            required=False,
+            help=("Prints Temp Targets"),
+        )
+
+    args = parser.parse_args(argv)
+
+    return args
+
+
+args = load_args()
+
 init()
 profiles = load_profiles()
 signal.signal(signal.SIGINT, graceful_shutdown)
-#thread.start_new_thread( run_logger , ("FlowOv",))
-print ("Starting web server")
-s = Server(81)  # construct server object
-s.activate_server() # aquire the socket
+
+if args.dry_run :
+    times,temps = build_tempProfile(profiles[args.profile])
+    print temps
+else :
+    print ("Starting web server")
+    s = Server(81)  # construct server object
+    s.activate_server() # aquire the socket
