@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import Adafruit_GPIO.SPI as SPI
 import RPi.GPIO as GPIO
 import MAX6675.MAX6675 as MAX6675
